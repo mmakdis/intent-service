@@ -1,10 +1,16 @@
 import numpy as np
 import requests
 import io
+import os
 import itertools
 import ujson
 import json
 import sys
+from dotenv import load_dotenv
+
+# load variables from the .env file and put them into the OS environment
+load_dotenv()
+
 
 def get_permutations(sentences: list) -> list:
     return list(itertools.permutations(sentences, 2))
@@ -14,14 +20,39 @@ def load_data():
     with open(sys.argv[1]) as data:
         return ujson.load(data)
     
-def get_inputs(type: str = "chat", label: str = None):
+def get_labeled_inputs(type: str = "chat", label: str = None):
     input_data = load_data()
-    all_inputs = []
+    all_inputs = {}
     for input_id in input_data["inputs"]:
         input_json = input_data["inputs"][input_id]
-        if input_json["classifier"]["label"]:
-            all_inputs.append(input_json["input"])
+        if input_label := input_json["classifier"]["label"]:
+            all_inputs[input_label] = all_inputs.get(input_label, [])
+            all_inputs[input_label].append((input_id, input_json["input"]))
     return all_inputs
+
+
+def all_sentences_id(data: dict):
+    all_sentences_id = []
+    for value in data.values():
+        all_sentences_id.extend(iter(value))
+    return all_sentences_id
+
+def all_sentences(data: dict):
+    all_sentences = []
+    for value in data.values():
+        all_sentences.extend(sentence[1] for sentence in value)
+    return all_sentences
+
+def get_labeled_permutations(inputs: dict):
+    permutations = []
+    for label, value_ in inputs.items():
+        for input in value_:
+            permutations.extend(
+                (input[1], value[0][1])
+                for _label, value in inputs.items()
+                if _label != label
+            )
+    return permutations
         
 
 def batch_embed(sentences, batch_size=100):
@@ -35,7 +66,7 @@ def batch_embed(sentences, batch_size=100):
         # Subscription key for notebooks and testing
         res = requests.post(
             api_url, json=batch,
-            headers={'Ocp-Apim-Subscription-Key': '64d5c45e17c446de9589c9f94cfb0754'}
+            headers={'Ocp-Apim-Subscription-Key': os.getenv("TFUSEM_KEY")}
         )
         mem_file = io.BytesIO(res.content)
         mem_file.seek(0)
@@ -44,6 +75,7 @@ def batch_embed(sentences, batch_size=100):
         result += (chunk,)
     
     return np.vstack(result)
+
 
 def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
     """Computes the similarity matrix. High score indicates greater similarity.
@@ -63,11 +95,21 @@ def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
         return True
     return False
 
-#print(simiality("hello i'd like to make an order", "hallo ik wil m'n bestelling plaatsen"))
 
-if __name__ == "__main__":    
-    data = get_inputs()
-    result = batch_embed(data).tolist()
+def compute_labeled_scores():
+    data = get_labeled_inputs()
+    a = all_sentences_id(data)
+    sentences = all_sentences(data)
+    matrix = batch_embed(sentences)
+    print(matrix)
+    permutations = get_permutations(matrix)
+    #print(len(permutations))
+    #print(f"{len(permutations)} total combinations of sentences to compare")
+
+                
+def compute_unlabeled_scores():
+    data = get_labeled_inputs()
+    result = batch_embed(data)
     permutations = get_permutations(result)
     for perm in permutations:
         if score := np.inner(perm[0], perm[1]):
@@ -75,4 +117,6 @@ if __name__ == "__main__":
                 perm_index_1 = result.index(perm[0])
                 perm_index_2 = result.index(perm[1])
                 print(f"'{data[perm_index_1]}' and '{data[perm_index_2]}'")
-    
+
+if __name__ == "__main__":
+    compute_labeled_scores()
