@@ -303,7 +303,7 @@ class Intent():
                     perm_index_2 = result.index(perm[1])
                     print(f"'{data[perm_index_1]}' and '{data[perm_index_2]}'")
 
-def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
+def similarity(string_1: str, string_2: str, score: float = 0.6) -> dict[str, str]:
     """Computes the similarity matrix. High score indicates greater similarity.
 
     Args:
@@ -315,11 +315,8 @@ def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
         bool: if the computed matrix score is higher than the given score parameter, return True. Otherwise return False.
     """
     matrix = Intent().batch_embed([string_1, string_2])
-    computed_score = np.inner(matrix[0], matrix[1])
-    if computed_score > score:
-        print(f"'{string_1}' and '{string_2}' are {computed_score} in similarity")
-        return True
-    return False
+    computed_score = np.inner(matrix[0], matrix[1]).item()
+    return {"score": computed_score, "similar": computed_score >= score}
 
 
 if __name__ == "__main__":
