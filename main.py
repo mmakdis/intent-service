@@ -31,7 +31,7 @@ async def intent_inputs(data: JSONStructure, threshold: int = 0.6):
         `[{"label1": "id1", "label2": "id2", "score": n}, ...]`
     """
     intents = intent.Intent(file = data)
-    return intents.compute_labeled_scores(threshold)
+    return intents.compute_labeled_scores_fast(threshold)
 
 if __name__ == "__main__":
     uvicorn.run(app, host=getenv("HOST"), port=int(getenv("PORT")))

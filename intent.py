@@ -55,6 +55,9 @@ class Intent():
         
     def _get_label(self, input_id: int):
         return self.json_data["inputs"][input_id]["classifier"]["label"]
+    
+    def _get_input(self, input_id: int):
+        return self.json_data["inputs"][input_id]["input"]
         
     def batch_embed(self, sentences: list[str], batch_size: int = 100, api_key = None):
         """Encode a given array using the Universal Sentence Encoder (Multilingual) model
@@ -117,7 +120,7 @@ class Intent():
             list[tuple(c)]: a list of tuples, each tuple is a combination of 2.
         """
         logger.info(f"~{self.calc_combinations(len(sentences), r)} possible combinations")
-        return list(itertools.combinations(sentences, r))
+        return itertools.combinations(sentences, r)
 
     def get_labeled_inputs(self, type: str = "chat", label: str = None):
         # logger.info("get_labeled_inputs() running...")
@@ -130,11 +133,15 @@ class Intent():
                 all_inputs[input_label].append((input_id, input_json["input"]))
         return all_inputs
 
-    def all_sentences_id(self, data: dict):
+    def all_sentences_id(self, data: dict, only_ids: bool = False):
         # logger.info("all_sentences_id() running...")
         all_sentences_id = []
-        for value in data.values():
-            all_sentences_id.extend(iter(value))
+        if only_ids:
+            for value in data.values():
+                all_sentences_id.extend(sentence[0] for sentence in value)
+        else:
+            for value in data.values():
+                all_sentences_id.extend(iter(value))
         return all_sentences_id
 
     def all_sentences(self, data: dict):
@@ -153,8 +160,41 @@ class Intent():
                     if _label != label
                 )
         return permutations
+    
+    def compute_labeled_scores_fast(self, threshold: float = 0.6) -> dict:
+        """Uses a different algorithm to compute the output
 
-    def compute_labeled_scores(self, threshold: int = 0.6) -> dict:
+        Args:
+            threshold (float, optional): the threshold. Defaults to 0.6.
+
+        Returns:
+            dict: _description_
+        """
+        data = self.get_labeled_inputs()
+        sentences_id = self.all_sentences_id(data, only_ids=True)
+        matrix = self.batch_embed(self.all_sentences(data))
+        l_matrix = matrix.tolist()
+        matrix_ids = list(zip(sentences_id, matrix))
+        permutations = self.get_combinations(matrix_ids)
+        output = []
+        for _ in tqdm(list(permutations)):
+            id1 = _[0][0]
+            id2 = _[1][0]
+            label = self._get_label(id1)
+            label2 = self._get_label(id2)
+            if label == label2:
+                continue
+            score = np.inner(_[0][1], _[1][1])
+            if score < threshold:
+                continue
+            string_1 = self._get_input(id1)
+            string_2 = self._get_input(id2)
+            #l = sentences_id[string_1]
+            #l2 = sentences_id[string_2]
+            output.append({label: id1, label2: id2, "score": score.item()})
+        return output
+
+    def compute_labeled_scores(self, threshold: float = 0.6) -> dict:
         data = self.get_labeled_inputs()
         # An index of an encoded sentence from matrix can be used
         # with the sentences_id variable to get the sentence data. 
@@ -162,7 +202,6 @@ class Intent():
         # the first index of the tuple is well, the ID, that can be used 
         # to know where the sentence is in the dataset.
         sentences_id = self.all_sentences_id(data)
-        #print(len(self.get_labeled_permutations(data)))
         matrix = self.batch_embed(self.all_sentences(data))
         l_matrix = matrix.tolist()
         permutations = self.get_combinations(matrix)
@@ -182,7 +221,6 @@ class Intent():
                 # FastAPI doesn't know what that is because it's not a Python type 
                 # So the REST API returns an error that the object is not iterable
                 output.append({label: l[0], label2: l2[0], "score": score.item()})
-        print(len(output))
         return output
                 
     def compute_unlabeled_scores(self):
@@ -217,5 +255,6 @@ def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
 
 if __name__ == "__main__":
     intent = Intent(sys.argv[1])
-    output = intent.compute_labeled_scores()
+    output = intent.compute_labeled_scores_fast()
+    print(output)
     
