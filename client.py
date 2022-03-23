@@ -1,8 +1,11 @@
+"""
+A simple client demonstrating the REST API and how it's used
+"""
 import requests
-import ujson
 import sys
 
 if __name__ == '__main__':
     with open(sys.argv[1], "r") as f:
-        output = requests.post("http://localhost:8000/scores", data=f.read()).json()
-        print(output)
+        json_data = f.read()
+        output = requests.post("http://localhost:8000/scores", data=json_data)
+        print(output.json())

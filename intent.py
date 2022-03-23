@@ -7,6 +7,7 @@ import ujson
 import json
 import sys
 import logging
+from timeit import default_timer as timer
 from tqdm import tqdm
 from typing import Any, Union
 from dotenv import load_dotenv
@@ -53,10 +54,27 @@ class Intent():
         with open(file_path, "r") as data:
             return ujson.load(data)
         
-    def _get_label(self, input_id: int):
+    def _get_label(self, input_id: str):
+        """Get the label of the ID.
+        Why? Avoids typing long syntax everytime it's needed.
+
+        Args:
+            input_id (str): the ID.
+
+        Returns:
+            _type_: _description_
+        """
         return self.json_data["inputs"][input_id]["classifier"]["label"]
     
     def _get_input(self, input_id: int):
+        """_summary_
+
+        Args:
+            input_id (int): _description_
+
+        Returns:
+            _type_: _description_
+        """
         return self.json_data["inputs"][input_id]["input"]
         
     def batch_embed(self, sentences: list[str], batch_size: int = 100, api_key = None):
@@ -123,6 +141,15 @@ class Intent():
         return itertools.combinations(sentences, r)
 
     def get_labeled_inputs(self, type: str = "chat", label: str = None):
+        """_summary_
+
+        Args:
+            type (str, optional): _description_. Defaults to "chat".
+            label (str, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         # logger.info("get_labeled_inputs() running...")
         input_data = self.json_data
         all_inputs = {}
@@ -134,23 +161,47 @@ class Intent():
         return all_inputs
 
     def all_sentences_id(self, data: dict, only_ids: bool = False):
+        """_summary_
+
+        Args:
+            data (dict): _description_
+            only_ids (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
         # logger.info("all_sentences_id() running...")
         all_sentences_id = []
-        if only_ids:
-            for value in data.values():
+        for value in data.values():
+            if only_ids:
                 all_sentences_id.extend(sentence[0] for sentence in value)
-        else:
-            for value in data.values():
+            else:
                 all_sentences_id.extend(iter(value))
         return all_sentences_id
 
     def all_sentences(self, data: dict):
+        """_summary_
+
+        Args:
+            data (dict): _description_
+
+        Returns:
+            _type_: _description_
+        """
         all_sentences = []
         for value in data.values():
             all_sentences.extend(sentence[1] for sentence in value)
         return all_sentences
 
     def get_labeled_permutations(self, inputs: dict):
+        """_summary_
+
+        Args:
+            inputs (dict): _description_
+
+        Returns:
+            _type_: _description_
+        """
         permutations = []
         for label, value_ in inputs.items():
             for input in value_:
@@ -162,13 +213,19 @@ class Intent():
         return permutations
     
     def compute_labeled_scores_fast(self, threshold: float = 0.6) -> dict:
-        """Uses a different algorithm to compute the output
+        """Compute the similarity scores using the loaded dataset.
+
 
         Args:
-            threshold (float, optional): the threshold. Defaults to 0.6.
+            threshold (float, optional): the minimum similarity threshold. 
+            Anything higher or equal to this given threshold is added to the 
+            output.
+            Defaults to 0.6.
 
         Returns:
-            dict: _description_
+            List[Dict[str, str]]: A list of dictionaries, each dictionary is a
+            computed threshold with what it was compared with. Example:
+            `{"label": "id", "label2": "id2", "score": 0.6}`
         """
         data = self.get_labeled_inputs()
         sentences_id = self.all_sentences_id(data, only_ids=True)
@@ -177,7 +234,8 @@ class Intent():
         matrix_ids = list(zip(sentences_id, matrix))
         permutations = self.get_combinations(matrix_ids)
         output = []
-        for _ in tqdm(list(permutations)):
+        logger.info("Calculating similarity matrix (score) for each combination...")
+        for _ in permutations:
             id1 = _[0][0]
             id2 = _[1][0]
             label = self._get_label(id1)
@@ -187,14 +245,25 @@ class Intent():
             score = np.inner(_[0][1], _[1][1])
             if score < threshold:
                 continue
-            string_1 = self._get_input(id1)
-            string_2 = self._get_input(id2)
-            #l = sentences_id[string_1]
-            #l2 = sentences_id[string_2]
             output.append({label: id1, label2: id2, "score": score.item()})
         return output
 
     def compute_labeled_scores(self, threshold: float = 0.6) -> dict:
+        """DEPRECATED! Use compute_labeled_scores_fast() 
+
+        Compute the similarity scores using the loaded dataset.
+
+        Args:
+            threshold (float, optional): the minimum similarity threshold. 
+            Anything higher or equal to this given threshold is added to the 
+            output.
+            Defaults to 0.6.
+
+        Returns:
+            List[Dict[str, str]]: A list of dictionaries, each dictionary is a
+            computed threshold with what it was compared with. Example:
+            {"label": "id", "label2": "id2", "score": 0.6}
+        """
         data = self.get_labeled_inputs()
         # An index of an encoded sentence from matrix can be used
         # with the sentences_id variable to get the sentence data. 
@@ -206,7 +275,7 @@ class Intent():
         l_matrix = matrix.tolist()
         permutations = self.get_combinations(matrix)
         output = []
-        logger.info("Calculating similarity matrix (score) for each combination")
+        logger.info("Calculating similarity matrix (score) for each combination...")
         for _ in tqdm(permutations):
             score = np.inner(_[0], _[1])
             string_1 = l_matrix.index(_[0].tolist())
