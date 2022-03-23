@@ -1,122 +1,37 @@
-import numpy as np
-import requests
-import io
-import os
-import itertools
+import uvicorn
 import ujson
-import json
-import sys
+import intent
+from os import getenv
+from typing import Optional, Any, Dict, AnyStr, List, Union
+from fastapi import FastAPI, Request
 from dotenv import load_dotenv
 
-# load variables from the .env file and put them into the OS environment
 load_dotenv()
+app = FastAPI()
 
+JSONObject = Dict[str, Any]
+JSONArray = List[Any]
+JSONStructure = Union[JSONArray, JSONObject]
 
-def get_permutations(sentences: list) -> list:
-    return list(itertools.permutations(sentences, 2))
+@app.get("/")
+async def read_root():
+    return "API is running"
 
-
-def load_data():
-    with open(sys.argv[1]) as data:
-        return ujson.load(data)
-    
-def get_labeled_inputs(type: str = "chat", label: str = None):
-    input_data = load_data()
-    all_inputs = {}
-    for input_id in input_data["inputs"]:
-        input_json = input_data["inputs"][input_id]
-        if input_label := input_json["classifier"]["label"]:
-            all_inputs[input_label] = all_inputs.get(input_label, [])
-            all_inputs[input_label].append((input_id, input_json["input"]))
-    return all_inputs
-
-
-def all_sentences_id(data: dict):
-    all_sentences_id = []
-    for value in data.values():
-        all_sentences_id.extend(iter(value))
-    return all_sentences_id
-
-def all_sentences(data: dict):
-    all_sentences = []
-    for value in data.values():
-        all_sentences.extend(sentence[1] for sentence in value)
-    return all_sentences
-
-def get_labeled_permutations(inputs: dict):
-    permutations = []
-    for label, value_ in inputs.items():
-        for input in value_:
-            permutations.extend(
-                (input[1], value[0][1])
-                for _label, value in inputs.items()
-                if _label != label
-            )
-    return permutations
-        
-
-def batch_embed(sentences, batch_size=100):
-    result = ()
-    # Current code cannot handle generators
-    sentences = list(sentences)
-    api_url = 'https://ai-connect.wearetriple.com/tfusem'
-    
-    for i in range(0, len(sentences), batch_size):
-        batch = sentences[i:i + batch_size]
-        # Subscription key for notebooks and testing
-        res = requests.post(
-            api_url, json=batch,
-            headers={'Ocp-Apim-Subscription-Key': os.getenv("TFUSEM_KEY")}
-        )
-        mem_file = io.BytesIO(res.content)
-        mem_file.seek(0)
-
-        chunk = np.load(mem_file, allow_pickle=False)
-        result += (chunk,)
-    
-    return np.vstack(result)
-
-
-def similarity(string_1: str, string_2: str, score: float = 0.6) -> bool:
-    """Computes the similarity matrix. High score indicates greater similarity.
+@app.post("/scores")
+async def intent_inputs(data: JSONStructure, threshold: int = 0.6):
+    """Compute similarity matrix & scores of the sentences.
 
     Args:
-        string_1 (str): the first string.
-        string_2 (str): the second string.
-        score (float, optional): Simiality score to check on. Defaults to 0.6.
+        data (JSONStructure): the JSON dataset.
+        threshold (int, optional): the threshold to check the score on
+        higher than the value = similar. Defaults to 0.6.
 
     Returns:
-        bool: if the computed matrix score is higher than the given score parameter, return True. Otherwise return False.
+        List[Dict[str, str]]: a list of dictionaries: 
+        `[{"label1": "id1", "label2": "id2", "score": n}, ...]`
     """
-    matrix = batch_embed([string_1, string_2])
-    computed_score = np.inner(matrix[0], matrix[1])
-    if computed_score > score:
-        print(f"'{string_1}' and '{string_2}' are {computed_score} in similarity")
-        return True
-    return False
-
-
-def compute_labeled_scores():
-    data = get_labeled_inputs()
-    a = all_sentences_id(data)
-    sentences = all_sentences(data)
-    matrix = batch_embed(sentences)
-    print(matrix)
-    permutations = get_permutations(matrix)
-    #print(len(permutations))
-    #print(f"{len(permutations)} total combinations of sentences to compare")
-
-                
-def compute_unlabeled_scores():
-    data = get_labeled_inputs()
-    result = batch_embed(data)
-    permutations = get_permutations(result)
-    for perm in permutations:
-        if score := np.inner(perm[0], perm[1]):
-            if score > 0.6:
-                perm_index_1 = result.index(perm[0])
-                perm_index_2 = result.index(perm[1])
-                print(f"'{data[perm_index_1]}' and '{data[perm_index_2]}'")
+    intents = intent.Intent(file = data)
+    return intents.compute_labeled_scores(threshold)
 
 if __name__ == "__main__":
-    compute_labeled_scores()
+    uvicorn.run(app, host=getenv("HOST"), port=int(getenv("PORT")))
