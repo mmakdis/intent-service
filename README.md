@@ -2,8 +2,8 @@
 
 an extension service for Wozzbot.
 
-## .env
-Check `.env.example`, you need a `Ocp-Apim-Subscription-Key` (`TFUSEM_KEY`)
+## Environment Variables
+Change `.env.example` to `.env` (because, well, it's only an example).
 
 ## REST API
 
