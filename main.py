@@ -1,14 +1,14 @@
 import uvicorn
 import ujson
-import intent
+import modules.intent as intent
+import modules.jq as jq
 from os import getenv
 from typing import Optional, Any, Dict, AnyStr, List, Union
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
-from . import worker
-
 
 load_dotenv()
+
 app = FastAPI()
 
 JSONObject = Dict[str, Any]
@@ -20,7 +20,7 @@ async def read_root():
     return "API is running"
 
 
-@app.post("/labeled_matrix")
+@app.post("/inputs/compare/labeled")
 async def labeled_inputs(data: JSONStructure, threshold: int = 0.6):
     """Compute similarity matrix & scores of the sentences.
 
@@ -37,8 +37,8 @@ async def labeled_inputs(data: JSONStructure, threshold: int = 0.6):
     return intents.compute_labeled_scores_fast(threshold)
 
 
-@app.post("/unlabeled_matrix")
-async def unlabeled_inputs(data: JSONStructure, threshold: int = 0.6):
+@app.post("/inputs/compare/unlabeled")
+async def unlabeled_inputs(data: JSONStructure, threshold: int = 0.6, queue: bool = True):
     """Compute the similarity matrix (scores) of unlabeled inputs.
 
     Args:
@@ -67,7 +67,7 @@ async def unlabeled_inputs(sentence_1: str, sentence_2: str, threshold: float = 
         bool: if the computed matrix score is higher than the given score parameter, return True. Otherwise return False.
     """
     return intent.similarity(sentence_1, sentence_2, threshold)
-    
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host=getenv("HOST"), port=int(getenv("PORT")))

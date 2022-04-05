@@ -301,6 +301,14 @@ class Intent():
         return output
                 
     def compute_unlabeled_scores(self, threshold: float = 0.6):
+        """Compute the simiality scores for unlabeled inputs.
+
+        Args:
+            threshold (float, optional): the threshold for the scores. Defaults to 0.6.
+
+        Returns:
+            _type_: _description_
+        """
         data = self.get_unlabled_inputs()
         sentences = []
         sentence_ids = []

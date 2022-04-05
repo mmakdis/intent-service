@@ -1,11 +1,11 @@
 import time
 import io
-import json
+import ujson
 import logging.config
 from multiprocessing import Process, Queue
 from dotenv import load_dotenv
 load_dotenv()
-
+from modules import intent
 from jobqueue_worker import Job, Result, ResultStatus, basic_worker
 from jobqueue_worker.config import loggers
 
@@ -20,28 +20,47 @@ job_success = False
 
 
 def handler(job: Job, stream: io.BytesIO):
-    global job_success
-    job_success = not job_success
+    try:
+        #intents = intent.Intent(json.loads(stream))
+        #result_data = intents.compute_labeled_scores()
+        settings = ujson.loads(job.parameters)
+        
+        if "compare" not in settings:
+            return Result(status=ResultStatus.FAILED)
+        if settings["compare"] not in ["labeled", "unlabeled"]:
+            return Result(status=ResultStatus.FAILED)
+        labeled = settings["compare"] == "labeled"
 
-    if not job_success:
-        LOG.info("Handled job as failed")
-        return Result(status=ResultStatus.FAILED)
+        stream_read = stream.read().decode("utf-8")
+        result_data = ujson.dumps(stream_read)
+        data = ujson.loads(result_data)
+    
+        intents = intent.Intent(result_data)
+        output = intents.compute_labeled_scores_fast()
+        print(len(output))
+        result_stream = io.StringIO(output)
+        result_stream.write()
+        result_stream.seek(0)
 
-    result = Result(
-        status=ResultStatus.SUCCESS,
-        params={
-            "worker": "Job Worker",
-            "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "input_data": json.loads(job.parameters),
-        },
-        blob_name=job.id,
-        blob_data=stream,
-    )
+        #intents = intent.Intent()
+        result = Result(
+            status=ResultStatus.SUCCESS,
+            params={
+                "worker": "Job Worker",
+                "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "input_data": settings,
+            },
+            blob_name=job.id,
+            blob_data=result_stream)
 
-    LOG.info("Handled job")
-    print(result)
-    return result
+        LOG.info("Handled job")
+        return result
 
+    except Exception as ex:
+        LOG.exception("Function failed")
+    
+    LOG.info("Handled job as failed")
+    return Result(status=ResultStatus.FAILED)
 
 def run_worker():
     """Run basic_worker in a different process.
@@ -51,3 +70,6 @@ def run_worker():
     #basic_worker(handler, retrieve_blob=True)
     p.start()
     p.join()
+
+
+basic_worker(handler, retrieve_blob=True)
